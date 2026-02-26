@@ -59,7 +59,7 @@
             const email = document.getElementById('email-confirm').value;
             if(!email) { alert("Digite o e-mail primeiro!"); return; }
 
-            fetch(`${URL_FB}/licencas/${idLicenca}.json`)
+            fetch(`${URL_FB}/dados_clientes/${idLicenca}/configuracoes/operador.json`)
                 .then(r => r.json())
                 .then(d => {
                     if(d && d.email === email) {
@@ -125,4 +125,5 @@
         }
     </script>
 </body>
+
 </html>
