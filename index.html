@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POÇÕES - Leitura de Água</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        :root { --azul: #1f538d; --cinza-bg: #F2F2F2; --danger: #cc0000; }
+        body { font-family: Arial, sans-serif; background: var(--cinza-bg); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .card { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        .btn { background: var(--azul); color: white; border: none; border-radius: 8px; padding: 15px; width: 100%; font-weight: bold; margin-top: 10px; cursor: pointer; }
+        #reader { width: 100%; border-radius: 10px; margin-top: 15px; background: #000; }
+        .cliente-item { background: white; border-left: 5px solid var(--azul); padding: 15px; margin-bottom: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; text-align: left; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; }
+        #modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:100; align-items: center; justify-content: center; }
+    </style>
+</head>
+<body>
+
+    <div id="tela-login" class="card">
+        <h2 style="color: var(--azul); margin-bottom: 5px;">📍 POÇÕES</h2>
+        <p>Aponte para o QR Code de acesso</p>
+        <div id="reader"></div>
+        <input type="email" id="email-confirm" placeholder="Confirme seu e-mail">
+        <div id="msg-erro" style="color: red; font-size: 12px; margin-top: 5px;"></div>
+    </div>
+
+    <div id="tela-lista" style="display:none; width: 100%; max-width: 400px;">
+        <h3 style="text-align: center; color: var(--azul);">LISTA DE LEITURA</h3>
+        <input type="text" id="busca" placeholder="🔍 Buscar cliente ou rua..." onkeyup="filtrar()">
+        <div id="container-clientes"></div>
+    </div>
+
+    <div id="modal">
+        <div class="card">
+            <h3 id="m-nome">Cliente</h3>
+            <p>Anterior: <strong id="m-ant">0</strong></p>
+            <input type="number" id="m-atual" placeholder="Leitura Atual" style="font-size: 20px;">
+            <button class="btn" onclick="salvarLeitura()" style="background: #28a745;">SALVAR</button>
+            <button class="btn" onclick="fecharModal()" style="background: #666;">CANCELAR</button>
+        </div>
+    </div>
+
+    <script>
+        const URL_FB = "https://consuma-da-agua-default-rtdb.firebaseio.com/"; // SUA URL
+        let idLicenca = "";
+        let dadosClientes = {};
+        let clienteAtualId = "";
+
+        // Inicializa Scanner
+        const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        scanner.render((text) => {
+            idLicenca = text;
+            verificarAcesso();
+        });
+
+        function verificarAcesso() {
+            const email = document.getElementById('email-confirm').value;
+            if(!email) { alert("Digite o e-mail primeiro!"); return; }
+
+            fetch(`${URL_FB}/licencas/${idLicenca}.json`)
+                .then(r => r.json())
+                .then(d => {
+                    if(d && d.email === email) {
+                        document.getElementById('tela-login').style.display = 'none';
+                        document.getElementById('tela-lista').style.display = 'block';
+                        carregarDados();
+                    } else {
+                        document.getElementById('msg-erro').innerText = "Acesso Inválido!";
+                    }
+                });
+        }
+
+        function carregarDados() {
+            fetch(`${URL_FB}/dados_clientes/${idLicenca}.json`)
+                .then(r => r.json())
+                .then(d => {
+                    dadosClientes = d;
+                    renderLista(d.clientes);
+                });
+        }
+
+        function renderLista(clientes) {
+            const cont = document.getElementById('container-clientes');
+            cont.innerHTML = "";
+            for (let id in clientes) {
+                cont.innerHTML += `
+                    <div class="cliente-item" onclick="abrirModal('${id}')">
+                        <div>
+                            <strong>${clientes[id].nome}</strong><br>
+                            <small>${clientes[id].endereco}</small>
+                        </div>
+                        <div style="font-size: 20px; color: var(--azul);">⊕</div>
+                    </div>`;
+            }
+        }
+
+        function abrirModal(id) {
+            clienteAtualId = id;
+            document.getElementById('m-nome').innerText = dadosClientes.clientes[id].nome;
+            document.getElementById('m-ant').innerText = dadosClientes.clientes[id].ultima_leitura;
+            document.getElementById('modal').style.display = 'flex';
+        }
+
+        function fecharModal() { document.getElementById('modal').style.display = 'none'; }
+
+        function salvarLeitura() {
+            const atual = document.getElementById('m-atual').value;
+            if(!atual) return;
+            
+            const anterior = dadosClientes.clientes[clienteAtualId].ultima_leitura;
+            const consumo = atual - anterior;
+            const total = (consumo * dadosClientes.configuracoes.preco_m3) + (dadosClientes.clientes[clienteAtualId].isento_tarifa ? 0 : dadosClientes.configuracoes.tarifa_fixa);
+
+            const payload = {
+                id_cliente: clienteAtualId,
+                valor: total,
+                leitura_atual: atual,
+                data: new Date().toLocaleDateString()
+            };
+
+            fetch(`${URL_FB}/dados_clientes/${idLicenca}/cobrancas.json`, { method: 'POST', body: JSON.stringify(payload) })
+            .then(() => { alert("Sucesso!"); fecharModal(); carregarDados(); });
+        }
+    </script>
+</body>
+</html>
