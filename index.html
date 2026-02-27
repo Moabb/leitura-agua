@@ -6,61 +6,74 @@
     <title>POÇÕES - Leitura de Água</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        :root { --azul: #1f538d; --verde: #28a745; --cinza-bg: #F2F2F2; --danger: #cc0000; }
+        :root { --azul: #1f538d; --verde: #28a745; --cinza-bg: #F2F2F2; --laranja: #ff9800; }
         body { font-family: Arial, sans-serif; background: var(--cinza-bg); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
         .card { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
         .btn { background: var(--azul); color: white; border: none; border-radius: 8px; padding: 15px; width: 100%; font-weight: bold; margin-top: 10px; cursor: pointer; }
         #reader { width: 100%; border-radius: 10px; margin-top: 15px; background: #000; }
         .cliente-item { background: white; border-left: 5px solid var(--azul); padding: 15px; margin-bottom: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; text-align: left; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer; transition: 0.3s; }
-        .cliente-item.concluido { border-left: 5px solid var(--verde); background: #f0fff4; }
+        .cliente-item.concluido { border-left: 5px solid var(--verde); background: #f0fff4; opacity: 0.8; }
         input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; }
         #modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:100; align-items: center; justify-content: center; }
-        #btn-sync { background: orange; color: black; display: none; margin-bottom: 10px; }
+        #btn-sync { background: var(--laranja); color: white; display: none; margin-bottom: 15px; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
 
     <div id="tela-login" class="card">
         <h2 style="color: var(--azul); margin-bottom: 5px;">📍 POÇÕES</h2>
-        <p>Aponte para o QR Code de acesso</p>
+        <p>Aponte para o QR Code e confirme seu nome</p>
         <div id="reader"></div>
-        <input type="text" id="email-confirm" placeholder="Confirme seu nome de usuário">
-        <button class="btn" onclick="verificarAcesso()">ACESSAR</button>
+        <input type="text" id="email-confirm" placeholder="Nome do Leiturista">
+        <button class="btn" onclick="verificarAcesso()">ACESSAR SISTEMA</button>
         <div id="msg-erro" style="color: red; font-size: 12px; margin-top: 5px;"></div>
     </div>
 
     <div id="tela-lista" style="display:none; width: 100%; max-width: 400px;">
-        <h3 style="text-align: center; color: var(--azul);">LISTA DE LEITURA</h3>
+        <h3 style="text-align: center; color: var(--azul); margin-bottom: 5px;">LISTA DE LEITURA</h3>
+        <p id="info-usuario" style="text-align: center; font-size: 12px; color: #666; margin-bottom: 15px;"></p>
+        
         <button id="btn-sync" class="btn" onclick="sincronizarPendentes()">☁️ SINCRONIZAR PENDENTES (<span id="count-sync">0</span>)</button>
+        
         <input type="text" id="busca" placeholder="🔍 Buscar cliente ou rua..." onkeyup="filtrar()">
         <div id="container-clientes"></div>
-        <button class="btn" onclick="logout()" style="background:#666; margin-top: 30px;">SAIR / TROCAR MÁQUINA</button>
+        
+        <button class="btn" onclick="logout()" style="background:#666; margin-top: 30px; font-size: 12px;">SAIR / TROCAR MÁQUINA</button>
     </div>
 
     <div id="modal">
         <div class="card">
             <h3 id="m-nome">Cliente</h3>
-            <p>Anterior: <strong id="m-ant">0</strong></p>
-            <input type="number" id="m-atual" placeholder="Nova Leitura Atual" style="font-size: 20px;">
-            <button class="btn" onclick="salvarLeitura()" style="background: var(--verde);">SALVAR LEITURA</button>
+            <p>Leitura Anterior: <strong id="m-ant">0</strong></p>
+            <input type="number" id="m-atual" placeholder="Nova Leitura Atual" style="font-size: 20px;" inputmode="decimal">
+            <button class="btn" onclick="salvarLeitura()" style="background: var(--verde);">SALVAR E ENVIAR</button>
             <button class="btn" onclick="fecharModal()" style="background: #666;">CANCELAR</button>
         </div>
     </div>
 
     <script>
         const URL_FB = "https://consuma-da-agua-default-rtdb.firebaseio.com/";
+        
+        // IDENTIFICAÇÃO DO MÊS ATUAL PARA O RESET DE CHECKS
+        const dataHj = new Date();
+        const mesChave = (dataHj.getMonth() + 1).toString().padStart(2, '0') + "_" + dataHj.getFullYear();
+        
         let idLicenca = localStorage.getItem('idLicenca') || "";
         let nomeUsuario = localStorage.getItem('nomeUsuario') || "";
         let dadosClientes = {};
         let clienteAtualId = "";
-        let lidosHoje = JSON.parse(localStorage.getItem('lidosHoje') || "[]");
+        
+        // Carrega dados locais (Checks do mês e Fila Offline)
+        let lidosNoMes = JSON.parse(localStorage.getItem('lidos_' + mesChave) || "[]");
         let filaSincronizacao = JSON.parse(localStorage.getItem('filaSincronizacao') || "[]");
 
-        // Inicialização automática se já logado
+        // AUTO-LOGIN
         window.onload = () => {
             if(idLicenca && nomeUsuario) {
                 document.getElementById('tela-login').style.display = 'none';
                 document.getElementById('tela-lista').style.display = 'block';
+                document.getElementById('info-usuario').innerText = `Leiturista: ${nomeUsuario} | Mês: ${mesChave.replace('_','/')}`;
                 verificarPendentes();
                 carregarDados();
             }
@@ -68,14 +81,14 @@
 
         const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
         scanner.render((text) => {
-            document.getElementById('msg-erro').innerText = "QR Code lido! Confirme o nome.";
             idLicenca = text;
+            document.getElementById('msg-erro').innerText = "QR Code identificado! Digite seu nome.";
         });
 
         function verificarAcesso() {
             const nomeDigitado = document.getElementById('email-confirm').value.toUpperCase().trim();
-            if(!idLicenca) { alert("Leia o QR Code primeiro!"); return; }
-            if(!nomeDigitado) { alert("Digite seu nome!"); return; }
+            if(!idLicenca) { alert("Aponte a câmera para o QR Code!"); return; }
+            if(!nomeDigitado) { alert("Informe seu nome!"); return; }
 
             fetch(`${URL_FB}/dados_clientes/${idLicenca}/configuracoes/leiturista.json`)
                 .then(r => r.json())
@@ -85,16 +98,13 @@
                         localStorage.setItem('nomeUsuario', nomeDigitado);
                         location.reload(); 
                     } else {
-                        document.getElementById('msg-erro').innerText = "Usuário não autorizado!";
+                        document.getElementById('msg-erro').innerText = "Usuário não autorizado para esta licença!";
                     }
-                }).catch(() => alert("Erro de rede ao validar acesso."));
+                }).catch(() => alert("Erro ao validar. Verifique a internet."));
         }
 
         function logout() {
-            if(confirm("Deseja realmente sair? Dados não sincronizados podem ser perdidos.")) {
-                localStorage.clear();
-                location.reload();
-            }
+            if(confirm("Deseja sair?")) { localStorage.clear(); location.reload(); }
         }
 
         function carregarDados() {
@@ -102,7 +112,7 @@
                 .then(r => r.json())
                 .then(d => {
                     dadosClientes = d;
-                    localStorage.setItem('cache_dados', JSON.stringify(d)); // Backup offline dos nomes
+                    localStorage.setItem('cache_dados', JSON.stringify(d));
                     renderLista(d.clientes);
                 })
                 .catch(() => {
@@ -110,7 +120,6 @@
                     if(cache) {
                         dadosClientes = JSON.parse(cache);
                         renderLista(dadosClientes.clientes);
-                        console.log("Modo Offline Ativado");
                     }
                 });
         }
@@ -118,28 +127,30 @@
         function renderLista(clientes) {
             const cont = document.getElementById('container-clientes');
             cont.innerHTML = "";
-            for (let id in clientes) {
-                const foiLido = lidosHoje.includes(id);
-                const rua = clientes[id].rua || "Rua";
-                const num = clientes[id].numero || "";
+            const ids = Object.keys(clientes || {});
+            
+            ids.forEach(id => {
+                const foiLido = lidosNoMes.includes(id);
+                const rua = clientes[id].rua || "Rua não informada";
+                const num = clientes[id].numero || "S/N";
                 
                 cont.innerHTML += `
-                    <div class="cliente-item ${foiLido ? 'concluido' : ''}" data-nome="${clientes[id].nome}" onclick="abrirModal('${id}')">
+                    <div class="cliente-item ${foiLido ? 'concluido' : ''}" data-nome="${clientes[id].nome}" data-rua="${rua}" onclick="abrirModal('${id}')">
                         <div>
                             <strong>${clientes[id].nome}</strong><br>
                             <small>${rua}, ${num}</small>
                         </div>
-                        <div style="font-size: 20px;">${foiLido ? '✅' : '⊕'}</div>
+                        <div style="font-size: 18px;">${foiLido ? '✅' : '⊕'}</div>
                     </div>`;
-            }
+            });
         }
 
         function abrirModal(id) {
             clienteAtualId = id;
             const cliente = dadosClientes.clientes[id];
-            const leituraQueSeraAnterior = cliente.leitura_atual || 0;
+            const anterior = cliente.leitura_atual || 0;
             document.getElementById('m-nome').innerText = cliente.nome;
-            document.getElementById('m-ant').innerText = leituraQueSeraAnterior;
+            document.getElementById('m-ant').innerText = anterior;
             document.getElementById('m-atual').value = ""; 
             document.getElementById('modal').style.display = 'flex';
         }
@@ -147,107 +158,91 @@
         function fecharModal() { document.getElementById('modal').style.display = 'none'; }
 
         function salvarLeitura() {
-            const novaLeituraAtual = parseFloat(document.getElementById('m-atual').value);
-            const leituraAnterior = parseFloat(document.getElementById('m-ant').innerText);
+            const novaLeitura = parseFloat(document.getElementById('m-atual').value);
+            const anterior = parseFloat(document.getElementById('m-ant').innerText);
             
-            if (isNaN(novaLeituraAtual)) { alert("Insira a nova leitura!"); return; }
-            
+            if (isNaN(novaLeitura)) { alert("Digite a leitura atual!"); return; }
+            if (novaLeitura < anterior) { alert("Erro: Leitura menor que a anterior!"); return; }
+
             const cliente = dadosClientes.clientes[clienteAtualId];
-            const consumo = novaLeituraAtual - leituraAnterior;
-            const precoM3 = dadosClientes.configuracoes ? dadosClientes.configuracoes.preco_m3 : 0;
-            const tarifaFixa = dadosClientes.configuracoes ? dadosClientes.configuracoes.tarifa_fixa : 0;
+            const consumo = novaLeitura - anterior;
+            const precoM3 = dadosClientes.configuracoes?.preco_m3 || 0;
+            const tarifaFixa = dadosClientes.configuracoes?.tarifa_fixa || 0;
             const v_tarifa = cliente.isento_tarifa ? 0 : tarifaFixa;
             const total = (consumo * precoM3) + v_tarifa;
 
-            const novaCobranca = {
+            const cobranca = {
                 id_cliente: clienteAtualId,
                 nome_cliente: cliente.nome,
-                leitura_anterior: leituraAnterior,
-                leitura_atual: novaLeituraAtual,
+                leitura_anterior: anterior,
+                leitura_atual: novaLeitura,
                 consumo: consumo,
                 valor: total,
-                data_leitura: new Date().toLocaleDateString('pt-BR'),
+                data_leitura: dataHj.toLocaleDateString('pt-BR'),
                 pago: false
             };
 
-            // Marcar visualmente como feito
-            if(!lidosHoje.includes(clienteAtualId)) {
-                lidosHoje.push(clienteAtualId);
-                localStorage.setItem('lidosHoje', JSON.stringify(lidosHoje));
+            // MARCAR COMO CONCLUÍDO NO MÊS
+            if(!lidosNoMes.includes(clienteAtualId)) {
+                lidosNoMes.push(clienteAtualId);
+                localStorage.setItem('lidos_' + mesChave, JSON.stringify(lidosNoMes));
             }
 
-            // Tentar salvar no Firebase
-            enviarAoServidor(novaCobranca, clienteAtualId, novaLeituraAtual);
-            
+            tentarEnviar(cobranca, clienteAtualId, novaLeitura);
             fecharModal();
             renderLista(dadosClientes.clientes);
         }
 
-        function enviarAoServidor(cobranca, idCli, leitura) {
-            fetch(`${URL_FB}/dados_clientes/${idLicenca}/cobrancas.json`, { 
-                method: 'POST', body: JSON.stringify(cobranca) 
-            })
+        function tentarEnviar(obj, id, valor) {
+            fetch(`${URL_FB}/dados_clientes/${idLicenca}/cobrancas.json`, { method: 'POST', body: JSON.stringify(obj) })
             .then(() => {
-                return fetch(`${URL_FB}/dados_clientes/${idLicenca}/clientes/${idCli}.json`, {
-                    method: 'PATCH', body: JSON.stringify({ leitura_atual: leitura })
+                return fetch(`${URL_FB}/dados_clientes/${idLicenca}/clientes/${id}.json`, {
+                    method: 'PATCH', body: JSON.stringify({ leitura_atual: valor })
                 });
             })
             .then(() => {
-                console.log("Sincronizado online!");
+                console.log("Online: Sincronizado");
                 carregarDados();
             })
             .catch(() => {
-                // Se der erro (offline), salva na fila
-                filaSincronizacao.push({ cobranca, idCli, leitura });
+                filaSincronizacao.push({ obj, id, valor });
                 localStorage.setItem('filaSincronizacao', JSON.stringify(filaSincronizacao));
                 verificarPendentes();
-                alert("Modo Offline: Leitura salva no telefone. Sincronize quando tiver internet.");
+                alert("Sem internet! A leitura foi salva no celular e aparecerá o botão LARANJA para sincronizar depois.");
             });
         }
 
         function verificarPendentes() {
             const btn = document.getElementById('btn-sync');
             const count = document.getElementById('count-sync');
-            if(filaSincronizacao.length > 0) {
-                btn.style.display = 'block';
-                count.innerText = filaSincronizacao.length;
-            } else {
-                btn.style.display = 'none';
-            }
+            btn.style.display = filaSincronizacao.length > 0 ? 'block' : 'none';
+            count.innerText = filaSincronizacao.length;
         }
 
         async function sincronizarPendentes() {
-            alert("Iniciando sincronização...");
-            const pendentes = [...filaSincronizacao];
+            const lista = [...filaSincronizacao];
             filaSincronizacao = [];
             localStorage.setItem('filaSincronizacao', JSON.stringify([]));
 
-            for (let item of pendentes) {
+            for (let item of lista) {
                 try {
-                    await fetch(`${URL_FB}/dados_clientes/${idLicenca}/cobrancas.json`, { 
-                        method: 'POST', body: JSON.stringify(item.cobranca) 
-                    });
-                    await fetch(`${URL_FB}/dados_clientes/${idLicenca}/clientes/${item.idCli}.json`, {
-                        method: 'PATCH', body: JSON.stringify({ leitura_atual: item.leitura })
-                    });
+                    await fetch(`${URL_FB}/dados_clientes/${idLicenca}/cobrancas.json`, { method: 'POST', body: JSON.stringify(item.obj) });
+                    await fetch(`${URL_FB}/dados_clientes/${idLicenca}/clientes/${item.id}.json`, { method: 'PATCH', body: JSON.stringify({ leitura_atual: item.valor }) });
                 } catch (e) {
-                    filaSincronizacao.push(item); // Volta para a fila se falhar de novo
+                    filaSincronizacao.push(item);
                 }
             }
-            
             localStorage.setItem('filaSincronizacao', JSON.stringify(filaSincronizacao));
             verificarPendentes();
-            if(filaSincronizacao.length === 0) {
-                alert("Tudo sincronizado com sucesso!");
-                carregarDados();
-            }
+            if(filaSincronizacao.length === 0) { alert("Sincronização concluída!"); carregarDados(); }
         }
 
         function filtrar() {
             const termo = document.getElementById('busca').value.toUpperCase();
             const itens = document.getElementsByClassName('cliente-item');
             for (let item of itens) {
-                item.style.display = item.getAttribute('data-nome').toUpperCase().includes(termo) ? "flex" : "none";
+                const txt = item.getAttribute('data-nome').toUpperCase() + item.getAttribute('data-rua').toUpperCase();
+                item.style.display = txt.includes(termo) ? "flex" : "none";
             }
         }
     </script>
