@@ -56,21 +56,25 @@
         });
 
         function verificarAcesso() {
-            const email = document.getElementById('email-confirm').value;
-            if(!email) { alert("Digite o e-mail primeiro!"); return; }
+    const nomeDigitado = document.getElementById('email-confirm').value.toUpperCase().trim();
+    if(!nomeDigitado) { alert("Digite o nome do usuário!"); return; }
 
-            fetch(`${URL_FB}/dados_clientes/${idLicenca}/operadores/operador.json`)
-                .then(r => r.json())
-                .then(d => {
-                    if(d && d.email === email) {
-                        document.getElementById('tela-login').style.display = 'none';
-                        document.getElementById('tela-lista').style.display = 'block';
-                        carregarDados();
-                    } else {
-                        document.getElementById('msg-erro').innerText = "Acesso Inválido!";
-                    }
-                });
-        }
+    // Agora buscamos o nome salvo na pasta de configurações da máquina
+    fetch(`${URL_FB}/dados_clientes/${idLicenca}/configuracoes/leiturista.json`)
+        .then(r => r.json())
+        .then(nomeCadastrado => {
+            if(nomeCadastrado && nomeCadastrado === nomeDigitado) {
+                document.getElementById('tela-login').style.display = 'none';
+                document.getElementById('tela-lista').style.display = 'block';
+                carregarDados();
+            } else {
+                document.getElementById('msg-erro').innerText = "Usuário não autorizado para esta máquina!";
+            }
+        })
+        .catch(() => {
+            document.getElementById('msg-erro').innerText = "Erro ao conectar. Verifique a internet.";
+        });
+}
 
         function carregarDados() {
             fetch(`${URL_FB}/dados_clientes/${idLicenca}.json`)
@@ -127,4 +131,5 @@
 </body>
 
 </html>
+
 
