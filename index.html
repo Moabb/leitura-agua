@@ -36,8 +36,8 @@
         <div class="card">
             <h3 id="m-nome">Cliente</h3>
             <p>Anterior: <strong id="m-ant">0</strong></p>
-            <input type="number" id="m-atual" placeholder="Leitura Atual" style="font-size: 20px;">
-            <button class="btn" onclick="salvarLeitura()" style="background: #28a745;">SALVAR</button>
+            <input type="number" id="m-atual" placeholder="Nova Leitura Atual" style="font-size: 20px;">
+            <button class="btn" onclick="salvarLeitura()" style="background: #28a745;">SALVAR LEITURA</button>
             <button class="btn" onclick="fecharModal()" style="background: #666;">CANCELAR</button>
         </div>
     </div>
@@ -57,7 +57,6 @@
         function verificarAcesso() {
             const nomeDigitado = document.getElementById('email-confirm').value.toUpperCase().trim();
             if(!nomeDigitado) { alert("Digite o nome!"); return; }
-
             fetch(`${URL_FB}/dados_clientes/${idLicenca}/configuracoes/leiturista.json`)
                 .then(r => r.json())
                 .then(nomeCadastrado => {
@@ -68,9 +67,6 @@
                     } else {
                         document.getElementById('msg-erro').innerText = "Usuário não autorizado!";
                     }
-                })
-                .catch(() => {
-                    document.getElementById('msg-erro').innerText = "Erro de conexão.";
                 });
         }
 
@@ -87,14 +83,13 @@
             const cont = document.getElementById('container-clientes');
             cont.innerHTML = "";
             for (let id in clientes) {
-                const rua = clientes[id].rua || "Não informada";
-                const numero = clientes[id].numero || "";
-                
+                const rua = clientes[id].rua || "Rua";
+                const num = clientes[id].numero || "";
                 cont.innerHTML += `
-                    <div class="cliente-item" data-nome="${clientes[id].nome}" data-rua="${rua}" onclick="abrirModal('${id}')">
+                    <div class="cliente-item" data-nome="${clientes[id].nome}" onclick="abrirModal('${id}')">
                         <div>
                             <strong>${clientes[id].nome}</strong><br>
-                            <small>${rua}${numero ? ', ' + numero : ''}</small>
+                            <small>${rua}, ${num}</small>
                         </div>
                         <div style="font-size: 20px; color: var(--azul);">⊕</div>
                     </div>`;
@@ -105,8 +100,7 @@
             const termo = document.getElementById('busca').value.toUpperCase();
             const itens = document.getElementsByClassName('cliente-item');
             for (let item of itens) {
-                const texto = item.getAttribute('data-nome') + " " + item.getAttribute('data-rua');
-                item.style.display = texto.includes(termo) ? "flex" : "none";
+                item.style.display = item.getAttribute('data-nome').includes(termo) ? "flex" : "none";
             }
         }
 
@@ -114,11 +108,12 @@
             clienteAtualId = id;
             const cliente = dadosClientes.clientes[id];
             
-            // BUSCA A LEITURA CORRETA DO BANCO
-            const anterior = cliente.leitura_atual !== undefined ? cliente.leitura_atual : (cliente.ultima_leitura || 0);
+            // LÓGICA PRINCIPAL: Pega o que está no campo 'leitura_atual' do banco
+            // e atribui ao campo 'Anterior' do Modal.
+            const leituraQueSeraAnterior = cliente.leitura_atual || 0;
             
             document.getElementById('m-nome').innerText = cliente.nome;
-            document.getElementById('m-ant').innerText = anterior;
+            document.getElementById('m-ant').innerText = leituraQueSeraAnterior;
             document.getElementById('m-atual').value = ""; 
             document.getElementById('modal').style.display = 'flex';
         }
@@ -126,60 +121,56 @@
         function fecharModal() { document.getElementById('modal').style.display = 'none'; }
 
         function salvarLeitura() {
-            const atual = parseFloat(document.getElementById('m-atual').value);
-            if (isNaN(atual)) { alert("Insira um número válido!"); return; }
+            const novaLeituraAtual = parseFloat(document.getElementById('m-atual').value);
+            const leituraAnterior = parseFloat(document.getElementById('m-ant').innerText);
             
-            const cliente = dadosClientes.clientes[clienteAtualId];
-            const anterior = parseFloat(document.getElementById('m-ant').innerText);
-            const consumo = atual - anterior;
-
-            if (consumo < 0) {
-                alert("A leitura atual não pode ser menor que a anterior!");
+            if (isNaN(novaLeituraAtual)) { alert("Insira a nova leitura!"); return; }
+            if (novaLeituraAtual < leituraAnterior) {
+                alert("A nova leitura não pode ser menor que a anterior!");
                 return;
             }
 
+            const cliente = dadosClientes.clientes[clienteAtualId];
+            const consumo = novaLeituraAtual - leituraAnterior;
+
+            // Pega as configs do PC
             const precoM3 = dadosClientes.configuracoes ? dadosClientes.configuracoes.preco_m3 : 0;
             const tarifaFixa = dadosClientes.configuracoes ? dadosClientes.configuracoes.tarifa_fixa : 0;
-            
             const v_tarifa = cliente.isento_tarifa ? 0 : tarifaFixa;
             const total = (consumo * precoM3) + v_tarifa;
 
-            const hoje = new Date();
-            const dataFormatada = hoje.getDate().toString().padStart(2, '0') + '/' + 
-                                  (hoje.getMonth() + 1).toString().padStart(2, '0') + '/' + 
-                                  hoje.getFullYear();
+            const dataFormatada = new Date().toLocaleDateString('pt-BR');
 
             const novaCobranca = {
                 id_cliente: clienteAtualId,
                 nome_cliente: cliente.nome,
-                leitura_anterior: anterior,
-                leitura_atual: atual,
+                leitura_anterior: leituraAnterior,
+                leitura_atual: novaLeituraAtual,
                 consumo: consumo,
                 valor: total,
                 data_leitura: dataFormatada,
-                pago: false,
-                valor_tarifa: v_tarifa
+                pago: false
             };
 
-            // 1. Grava Cobrança
+            // 1. Salva a cobrança no histórico
             fetch(`${URL_FB}/dados_clientes/${idLicenca}/cobrancas.json`, { 
                 method: 'POST', 
                 body: JSON.stringify(novaCobranca) 
             })
             .then(() => {
-                // 2. Atualiza Leitura do Cliente no Banco
+                // 2. ATUALIZA O CAMPO DO CLIENTE: O que acabei de ler agora vira a 'leitura_atual'
+                // para que na próxima vez ela seja o 'Anterior'.
                 return fetch(`${URL_FB}/dados_clientes/${idLicenca}/clientes/${clienteAtualId}.json`, {
                     method: 'PATCH',
-                    body: JSON.stringify({ leitura_atual: atual })
+                    body: JSON.stringify({ leitura_atual: novaLeituraAtual })
                 });
             })
             .then(() => { 
-                alert("Gravado com Sucesso!"); 
+                alert("Leitura Gravada!"); 
                 fecharModal(); 
-                // 3. RECARREGA OS DADOS PARA O PRÓXIMO CÁLCULO ESTAR CORRETO
-                carregarDados(); 
+                carregarDados(); // Recarrega a memória para a próxima abertura de modal estar certa
             })
-            .catch(err => alert("Erro ao salvar: " + err));
+            .catch(err => alert("Erro: " + err));
         }
     </script>
 </body>
