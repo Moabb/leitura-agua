@@ -56,7 +56,7 @@
 
         function verificarAcesso() {
             const nomeDigitado = document.getElementById('email-confirm').value.toUpperCase().trim();
-            if(!nomeDigitado) { alert("Digite o nome do usuário!"); return; }
+            if(!nomeDigitado) { alert("Digite o nome!"); return; }
 
             fetch(`${URL_FB}/dados_clientes/${idLicenca}/configuracoes/leiturista.json`)
                 .then(r => r.json())
@@ -70,7 +70,7 @@
                     }
                 })
                 .catch(() => {
-                    document.getElementById('msg-erro').innerText = "Erro ao conectar.";
+                    document.getElementById('msg-erro').innerText = "Erro de conexão.";
                 });
         }
 
@@ -87,11 +87,14 @@
             const cont = document.getElementById('container-clientes');
             cont.innerHTML = "";
             for (let id in clientes) {
+                const rua = clientes[id].rua || "Não informada";
+                const numero = clientes[id].numero || "";
+                
                 cont.innerHTML += `
-                    <div class="cliente-item" data-nome="${clientes[id].nome}" data-rua="${clientes[id].rua || ''}" onclick="abrirModal('${id}')">
+                    <div class="cliente-item" data-nome="${clientes[id].nome}" data-rua="${rua}" onclick="abrirModal('${id}')">
                         <div>
                             <strong>${clientes[id].nome}</strong><br>
-                            <small>${clientes[id].rua || 'Rua não informada'}, N° ${clientes[id].numero}</small>
+                            <small>${rua}${numero ? ', ' + numero : ''}</small>
                         </div>
                         <div style="font-size: 20px; color: var(--azul);">⊕</div>
                     </div>`;
@@ -111,12 +114,12 @@
             clienteAtualId = id;
             const cliente = dadosClientes.clientes[id];
             
-            // CORREÇÃO: Busca leitura_atual ou ultima_leitura
+            // BUSCA A LEITURA CORRETA DO BANCO
             const anterior = cliente.leitura_atual !== undefined ? cliente.leitura_atual : (cliente.ultima_leitura || 0);
             
             document.getElementById('m-nome').innerText = cliente.nome;
             document.getElementById('m-ant').innerText = anterior;
-            document.getElementById('m-atual').value = ""; // Limpa o campo para a nova leitura
+            document.getElementById('m-atual').value = ""; 
             document.getElementById('modal').style.display = 'flex';
         }
 
@@ -138,11 +141,6 @@
             const precoM3 = dadosClientes.configuracoes ? dadosClientes.configuracoes.preco_m3 : 0;
             const tarifaFixa = dadosClientes.configuracoes ? dadosClientes.configuracoes.tarifa_fixa : 0;
             
-            if (precoM3 === 0) {
-                alert("Erro: Preço por m³ não configurado no PC!");
-                return;
-            }
-
             const v_tarifa = cliente.isento_tarifa ? 0 : tarifaFixa;
             const total = (consumo * precoM3) + v_tarifa;
 
@@ -163,11 +161,13 @@
                 valor_tarifa: v_tarifa
             };
 
+            // 1. Grava Cobrança
             fetch(`${URL_FB}/dados_clientes/${idLicenca}/cobrancas.json`, { 
                 method: 'POST', 
                 body: JSON.stringify(novaCobranca) 
             })
             .then(() => {
+                // 2. Atualiza Leitura do Cliente no Banco
                 return fetch(`${URL_FB}/dados_clientes/${idLicenca}/clientes/${clienteAtualId}.json`, {
                     method: 'PATCH',
                     body: JSON.stringify({ leitura_atual: atual })
@@ -176,6 +176,7 @@
             .then(() => { 
                 alert("Gravado com Sucesso!"); 
                 fecharModal(); 
+                // 3. RECARREGA OS DADOS PARA O PRÓXIMO CÁLCULO ESTAR CORRETO
                 carregarDados(); 
             })
             .catch(err => alert("Erro ao salvar: " + err));
