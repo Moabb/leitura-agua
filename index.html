@@ -113,8 +113,9 @@
     const atual = parseFloat(document.getElementById('m-atual').value);
     if (isNaN(atual)) { alert("Insira um número válido!"); return; }
     
-    // 1. Pegar dados do cliente selecionado
     const cliente = dadosClientes.clientes[clienteAtualId];
+    
+    // Pega a leitura anterior (o PC usa 'leitura_atual' no cadastro do cliente)
     const anterior = parseFloat(cliente.leitura_atual || 0);
     const consumo = atual - anterior;
 
@@ -123,21 +124,23 @@
         return;
     }
 
-    // 2. Buscar Preço e Tarifa (Ajustado para onde o Python lê)
-    // Se esses valores não existirem no Firebase, vamos usar um padrão para não travar
-    const precoM3 = dadosClientes.preco_m3 || 0; 
-    const tarifaFixa = dadosClientes.tarifa_fixa || 0;
+    // PEGA DO LUGAR CORRETO (Dentro de configuracoes)
+    const precoM3 = dadosClientes.configuracoes ? dadosClientes.configuracoes.preco_m3 : 0;
+    const tarifaFixa = dadosClientes.configuracoes ? dadosClientes.configuracoes.tarifa_fixa : 0;
     
+    if (precoM3 === 0) {
+        alert("Erro: Preço por m³ não configurado no sistema PC!");
+        return;
+    }
+
     const v_tarifa = cliente.isento_tarifa ? 0 : tarifaFixa;
     const total = (consumo * precoM3) + v_tarifa;
 
-    // 3. Formatar data igual ao Python (DD/MM/YYYY)
     const hoje = new Date();
     const dataFormatada = hoje.getDate().toString().padStart(2, '0') + '/' + 
                           (hoje.getMonth() + 1).toString().padStart(2, '0') + '/' + 
                           hoje.getFullYear();
 
-    // 4. Montar o objeto exatamente como o seu Python espera
     const novaCobranca = {
         id_cliente: clienteAtualId,
         nome_cliente: cliente.nome,
@@ -150,33 +153,30 @@
         valor_tarifa: v_tarifa
     };
 
-    // 5. Enviar Cobrança
+    // 1. Grava a cobrança
     fetch(`${URL_FB}/dados_clientes/${idLicenca}/cobrancas.json`, { 
         method: 'POST', 
         body: JSON.stringify(novaCobranca) 
     })
     .then(res => {
-        if(!res.ok) throw new Error("Erro no Firebase");
-        
-        // 6. IMPORTANTE: Atualizar a leitura no cadastro do cliente (igual o Python faz)
+        // 2. Atualiza o campo que o PC usa para mostrar a leitura no card
         return fetch(`${URL_FB}/dados_clientes/${idLicenca}/clientes/${clienteAtualId}.json`, {
             method: 'PATCH',
             body: JSON.stringify({ leitura_atual: atual })
         });
     })
     .then(() => { 
-        alert("Leitura gravada com sucesso!"); 
+        alert("Gravado com Sucesso!"); 
         fecharModal(); 
-        location.reload(); // Recarrega para atualizar a lista
+        carregarDados(); 
     })
-    .catch(err => {
-        alert("Erro ao salvar: " + err.message);
-    });
+    .catch(err => alert("Erro ao salvar: " + err));
 }
     </script>
 </body>
 
 </html>
+
 
 
 
